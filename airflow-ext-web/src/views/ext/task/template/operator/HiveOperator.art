@@ -1,0 +1,17 @@
+
+
+
+
+{{taskId}} = HiveOperator(
+    hive_cli_conn_id='{{task.hiveCliConnId}}',
+    task_id='{{taskId}}',
+    owner='{{task.owner}}',
+    hql= """
+    <%- task.hql %>
+    """,
+    dag=dag
+    )
+
+{{taskId}}.doc = """
+    <%- task.description %>
+"""

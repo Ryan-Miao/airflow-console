@@ -1,0 +1,26 @@
+spring:
+  profiles:
+    active: dev
+  jackson:
+    default-property-inclusion: non_null
+    date-format: "yyyy-MM-dd HH:mm:ss"
+    joda-date-time-format: "yyyy-MM-dd HH:mm:ss"
+    time-zone: "Asia/Shanghai"
+    serialization:
+      WRITE_DATES_AS_TIMESTAMPS: false
+  application:
+    name: "airflow-ext-api"
+
+
+
+springfox.documentation.swagger.v2.path: /swagger-resources/api-docs
+swagger.enable: true
+
+server:
+  servlet:
+    context-path: /api
+  port: 8081
+
+
+logging.file: logs/${spring.application.name}
+

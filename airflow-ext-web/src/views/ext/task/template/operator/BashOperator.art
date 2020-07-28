@@ -1,0 +1,18 @@
+
+
+
+
+
+
+{{taskId}} = BashOperator(
+    task_id='{{taskId}}',
+    bash_command="""
+    <%- task.bashCommand %>
+    """,
+    dag=dag)
+
+{{taskId}}.doc = """
+    <%- description %>
+"""
+
+

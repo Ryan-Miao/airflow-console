@@ -1,0 +1,16 @@
+
+
+
+{{taskId}} = ExternalTaskSensor(task_id='{{taskId}}',
+                            external_dag_id = '{{sensor.externalDagId}}',
+                            {{if sensor.externalTaskId}}
+                              external_task_id = '{{sensor.externalTaskId}}',
+                              {{else}}
+                              external_task_id = None,
+                            {{/if}}
+                            {{if sensor.executionDelta}}
+                              execution_delta = {{sensor.executionDelta}},
+                            {{/if}}
+                            dag=dag,
+                            mode = 'reschedule')
+

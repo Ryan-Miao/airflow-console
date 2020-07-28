@@ -1,0 +1,25 @@
+
+
+
+
+{{taskId}} = SimpleHttpOperator(
+    task_id='{{taskId}}',
+    http_conn_id='{{task.httpConnId}}',
+    method='{{task.method}}',
+    endpoint='{{task.endpoint}}',
+    {{if task.responseCheck}}
+      data=<%- task.data %>,
+    {{/if}}
+    {{if task.headers}}
+      headers=<%- task.headers %>,
+    {{/if}}
+    {{if task.responseCheck}}
+      response_check=<%- task.responseCheck %>,
+    {{/if}}
+    dag=dag
+)
+
+
+{{taskId}}.doc = """
+    <%- task.description %>
+"""

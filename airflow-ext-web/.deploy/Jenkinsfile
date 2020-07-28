@@ -1,0 +1,106 @@
+node('slave001') {
+
+    properties([gitLabConnection('gitlab-bigdata')])
+
+    stage('Prepare') {
+        echo "1.Prepare Stage"
+        checkout scm
+        updateGitlabCommitStatus name: 'build', state: 'pending'
+        //要部署的模块，若是根项目，用点 .
+        project_module = '.'
+        def props = readJSON file: "package.json"
+        img_name = props.name
+        img_version = props.version
+        k8s_label = props.name
+        docker_host = "docker.ryan-miao.com"
+        //要部署的k8s集群, 默认是杭州(config-hangzhou), 可选测试上海(config-shanghai)
+        k8s_cluster_node = "config-hangzhou"
+
+        //部署环境
+        profile=""
+        if(env.BRANCH_NAME == 'test') {
+            profile = "test"
+            k8s_cluster_node = "config-shanghai"
+        }
+        if(env.BRANCH_NAME == 'master') {
+            k8s_cluster_node = "config-hangzhou"
+            profile = "prod"
+        }
+
+        docker_img_name = "${docker_host}/${img_name}"
+        echo "docker-img-name: ${docker_img_name}"
+        script {
+            build_tag = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+            build_tag = "${env.BRANCH_NAME}-${build_tag}"
+
+            currentBuild.displayName = BUILD_NUMBER + "_" +build_tag
+        }
+    }
+
+    stage('Build') {
+        echo "2. Build"
+
+        try {
+            docker.image('node:12.6.0-buster').inside(" -v npm_cache:/home/node/.npm") {
+                sh 'npm install --registry=https://registry.npm.taobao.org;'
+                sh 'npm run test:ci --registry=https://registry.npm.taobao.org'
+            }
+        } catch (Exception ex) {
+            updateGitlabCommitStatus name: 'build', state: 'failed'
+            throw ex;
+        }
+
+        updateGitlabCommitStatus name: 'build', state: 'success'
+    }
+
+    if (env.BRANCH_NAME == 'test' || env.BRANCH_NAME == 'master') {
+        stage('Build Docker Image') {
+            echo "3.Build Docker Image Stage"
+
+            docker.image('node:12.6.0-buster').inside(" -v npm_cache:/home/node/.npm") {
+                    sh 'npm install --registry=https://registry.npm.taobao.org;'
+                    sh 'npm run build:' + profile + ' --registry=https://registry.npm.taobao.org'
+            }
+            sh "docker build -t ${docker_img_name}:${build_tag} " +
+               " --build-arg NGINX_CONF=.deploy/${profile}-default.conf" +
+               " -f .deploy/Dockerfile ."
+        }
+
+
+        stage('Push Docker Image') {
+            echo "4.Push Docker Image Stage"
+            //sh "mvn deploy -Dmaven.test.skip=true"
+            sh "docker tag ${docker_img_name}:${build_tag} ${docker_img_name}:latest"
+            sh "docker tag ${docker_img_name}:${build_tag} ${docker_img_name}:${img_version}"
+            withCredentials([usernamePassword(credentialsId: 'docker-register-ryan-miao', passwordVariable: 'dockerPassword', usernameVariable: 'dockerUser')]) {
+                sh "docker login -u ${dockerUser} -p ${dockerPassword} ${docker_host}"
+                sh "docker push ${docker_img_name}:latest"
+                sh "docker push ${docker_img_name}:${img_version}"
+                sh "docker push ${docker_img_name}:${build_tag}"
+            }
+        }
+
+        stage("Deploy to ${profile}") {
+            echo "5. Deploy Stage"
+                    
+            def k8s_conf_yaml = "${WORKSPACE}/${module_path}/.deploy/${profile}-k8s.yaml"
+            def k8s_cluster_node_conf = "/home/jenkins/.kube/${k8s_cluster_node}"
+
+            sh "sed -i 's!<IMG_NAME>!${img_name}!g;s!<IMG_TAG>!${build_tag}!g;s!<k8s-label>!${k8s_label}!g' ${k8s_conf_yaml} "
+            sh "kubectl --kubeconfig ${k8s_cluster_node_conf} apply -f ${k8s_conf_yaml} --record"
+            sh "sleep 5"
+            echo "创建的实例："
+
+            sh " kubectl --kubeconfig ${k8s_cluster_node_conf} get po -o wide | grep ${k8s_label}"
+            echo "您的应用svc: "
+            sh " kubectl --kubeconfig ${k8s_cluster_node_conf}  get svc | grep ${k8s_label}"
+            
+        }
+    }
+
+
+
+}
+
+
+

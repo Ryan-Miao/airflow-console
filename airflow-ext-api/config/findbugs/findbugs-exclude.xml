@@ -1,0 +1,29 @@
+<FindBugsFilter>
+  <!--参考  http://findbugs.sourceforge.net/manual/filter.html#d0e2318 -->
+  <Match>
+    <Class name="~.*\.entity\..*" />
+  </Match>
+  <Match>
+    <Class name="~.*\.vo\..*" />
+  </Match>
+
+
+  <!-- Match all XYZ violations. -->
+  <Match>
+    <Bug code="MALICIOUS_CODE" />
+  </Match>
+
+  <!-- All bugs in test classes, except for JUnit-specific bugs -->
+  <Match>
+    <Class name="~.*\.*Test" />
+    <Not>
+      <Bug code="IJU" />
+    </Not>
+  </Match>
+
+  <Match>
+    <Class name="~com\.foobar\.fooproject\.ui.*" />
+  </Match>
+
+
+</FindBugsFilter>

@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    type: com.zaxxer.hikari.HikariDataSource
+    url: jdbc:postgresql://10.0.101.117:3433/airflow
+    username: airflow
+    password: airflow
+    hikari:
+      connection-test-query: "select 1"
+      minimum-idle: 5
+      idle-timeout: 180000
+      maximum-pool-size: 10
+      auto-commit: true
+      pool-name: MyHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      validation-timeout: 1000
+
+## web前端页面地址
+page:
+  index: "http://localhost:9528"
+## 生成的dag git仓库
+git:
+  remote: "https://gitee.com/ryanmiao/dev-dags.git"
+  username: "ryanmiao"
+  password: "ghRmPpkDKWc5uYb"
+## airflow地址
+feign:
+  airflow: "http://10.0.101.117:8090"

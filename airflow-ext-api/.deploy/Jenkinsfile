@@ -1,0 +1,173 @@
+class MyChange {
+    String author;
+    String msg;
+}
+
+@NonCPS
+def getChanges() {
+    def changeLogSets = currentBuild.changeSets
+    for (int i = 0; i < changeLogSets.size(); i++) {
+        def entries = changeLogSets[0].items
+        for (int j = 0; j < entries.length; j++) {
+            def entry = entries[0]
+            def change = new MyChange()
+            change.author = entry.author
+            change.msg = entry.msg
+            return change
+        }
+    }
+
+}
+
+private void dingSuccess() {
+    echo "构建成功, 发布生产环境"
+    dingTalk accessToken: "${ding_group_access_token}", imageUrl: '', jenkinsUrl: "${ding_jenkinsUrl}", message: "@所有人 构建成功, 发布生产环境", notifyPeople: ""
+}
+
+node {
+    properties([gitLabConnection('gitlab-bigdata')])
+
+    stage('Prepare') {
+        echo "1.Prepare Stage"
+        checkout scm
+        updateGitlabCommitStatus name: 'build', state: 'pending'
+        pom = readMavenPom file: "pom.xml"
+        k8s_label = "${pom.artifactId}"
+        docker_host = "docker.ryan-miao.com"
+        k8s_cluster_node = "config-hangzhou"
+        ding_group_access_token = "faf8e44b7aeb99547cdsdf6f0224e580c84bddff79013f14a"
+        ding_jenkinsUrl = "http://jenkins.ryanmiao.com/view/%E4%B8%8A%E4%B8%8A%E5%8F%82%E8%B0%8B/"
+        //部署环境
+        profile = ""
+        if (env.BRANCH_NAME == 'test') {
+            profile = "test"
+            k8s_cluster_node = "config-shanghai"
+        }
+        if (env.BRANCH_NAME == 'master') {
+            profile = "prod"
+            k8s_cluster_node = "config-hangzhou"
+        }
+
+        img_name = "${pom.groupId}-${pom.artifactId}"
+        docker_img_name = "${docker_host}/${img_name}"
+        echo "group: ${pom.groupId}, artifactId: ${pom.artifactId}, version: ${pom.version}"
+        echo "docker-img-name: ${docker_img_name}"
+        script {
+            build_tag = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+            build_tag = "${env.BRANCH_NAME}-${build_tag}"
+
+            currentBuild.displayName = BUILD_NUMBER + "_" + build_tag
+        }
+    }
+
+    stage('Compile And UnitTest') {
+        echo "2.Compile the code"
+        try {
+            sh "mvn clean install"
+            junit testResults: '**/target/*-reports/TEST-*.xml'
+            jacoco()
+        } catch (Exception ex) {
+            updateGitlabCommitStatus name: 'build', state: 'failed'
+            throw ex;
+        } finally {
+
+        }
+    }
+
+
+    stage('Basic Quality Report') {
+        echo "3.Basic quality report"
+        sh "pwd; mvn -v"
+        sh "mvn site "
+
+        def java = scanForIssues tool: java()
+        def javadoc = scanForIssues tool: javaDoc()
+
+        publishIssues id: 'analysis-java', name: 'Java Issues', issues: [java, javadoc]
+        //, filters: [includePackage('io.jenkins.plugins.analysis.*')]
+
+        def checkstyle = scanForIssues tool: checkStyle(pattern: 'target/checkstyle-result.xml')
+        publishIssues issues: [checkstyle]
+
+        def pmd = scanForIssues tool: pmdParser(pattern: 'target/pmd.xml')
+        publishIssues issues: [pmd]
+
+        def cpd = scanForIssues tool: cpd(pattern: 'target/cpd.xml')
+        publishIssues issues: [cpd]
+
+        def spotbugs = scanForIssues tool: spotBugs(pattern: 'target/findbugsXml.xml')
+        publishIssues issues: [spotbugs]
+
+        def maven = scanForIssues tool: mavenConsole()
+        publishIssues issues: [maven]
+
+        publishIssues id: 'analysis-all', name: 'All Issues',
+                issues: [checkstyle, pmd, spotbugs] //, filters: [includePackage('io.jenkins.plugins.analysis.*')]
+    }
+
+    stage('Basic Quality Check') {
+        echo "3.1 Check quality threshold"
+        try {
+            sh "mvn pmd:check  pmd:cpd  checkstyle:check  findbugs:check"
+            updateGitlabCommitStatus name: 'build', state: 'success'
+        } catch (Exception ex) {
+            updateGitlabCommitStatus name: 'Basic Quality Check', state: 'failed'
+            throw ex;
+        } finally {
+
+        }
+    }
+
+
+    if (env.BRANCH_NAME == 'test' || env.BRANCH_NAME == 'master') {
+        stage('Build Docker Image') {
+            echo "4.Build Docker Image Stage"
+            sh "docker build -t ${docker_img_name}:${build_tag} " +
+                    " --build-arg JAR_FILE=target/${pom.artifactId}.jar " +
+                    " --build-arg profile=${profile} " +
+                    " -f .deploy/Dockerfile ."
+        }
+
+        stage('Push Docker Image') {
+            echo "5.Push Docker Image Stage"
+            //sh "mvn deploy -Dmaven.test.skip=true"
+            sh "docker tag ${docker_img_name}:${build_tag} ${docker_img_name}:latest"
+            sh "docker tag ${docker_img_name}:${build_tag} ${docker_img_name}:${pom.version}"
+            withCredentials([usernamePassword(credentialsId: 'docker-register-ryan-miao', passwordVariable: 'dockerPassword', usernameVariable: 'dockerUser')]) {
+                sh "docker login -u ${dockerUser} -p ${dockerPassword} ${docker_host}"
+                sh "docker push ${docker_img_name}:latest"
+                sh "docker push ${docker_img_name}:${pom.version}"
+                sh "docker push ${docker_img_name}:${build_tag}"
+            }
+        }
+
+
+        stage("Deploy to k8s - ${profile}") {
+            echo "6. Deploy Stage"
+
+            updateGitlabCommitStatus name: 'deploy', state: 'pending'
+            def k8s_conf_yaml = "${WORKSPACE}/${module_path}/.deploy/${profile}-k8s.yaml"
+            def k8s_cluster_node_conf = "/home/jenkins/.kube/${k8s_cluster_node}"
+
+            sh "sed -i 's!<IMG_NAME>!${img_name}!g;s!<IMG_TAG>!${build_tag}!g;s!<k8s-label>!${k8s_label}!g' ${k8s_conf_yaml} "
+            sh "kubectl --kubeconfig ${k8s_cluster_node_conf} apply -f ${k8s_conf_yaml} --record"
+            sh "sleep 5"
+            echo "创建的实例："
+
+            sh " kubectl --kubeconfig ${k8s_cluster_node_conf} get po -o wide | grep ${k8s_label}"
+            echo "您的应用svc: "
+            sh " kubectl --kubeconfig ${k8s_cluster_node_conf}  get svc | grep ${k8s_label}"
+
+            updateGitlabCommitStatus name: 'deploy', state: 'success'
+            if (profile == "prod") {
+                dingSuccess()
+            }
+        }
+    }
+
+
+}
+
+
+
+

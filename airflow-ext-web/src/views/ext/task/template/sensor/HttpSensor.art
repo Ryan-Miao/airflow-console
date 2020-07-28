@@ -1,0 +1,15 @@
+
+
+
+
+{{taskId}} = HttpSensor(
+    task_id='{{taskId}}',
+    http_conn_id='{{task.httpConnId}}',
+    endpoint='{{task.endpoint}}',
+    {{if task.headers}}
+      headers=<%- task.headers %>,
+    {{/if}}
+    response_check=<%- task.responseCheck %>,
+    poke_interval=600,
+    mode = 'reschedule',
+    dag=dag)

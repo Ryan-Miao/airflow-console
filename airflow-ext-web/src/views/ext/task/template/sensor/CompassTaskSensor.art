@@ -1,0 +1,6 @@
+
+
+
+
+{{taskId}} = compass_utils.compass_task_sensor('{{task.compassTaskId}}', '<%- task.bizdate %>', dag)
+

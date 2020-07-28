@@ -1,0 +1,21 @@
+
+
+
+
+{{taskId}} = Hive2RDBMSOperator(
+    task_id='{{taskId}}',
+    hive_query_sql="""
+    <%-task.hiveQuerySql %>
+    """,
+    rdbms_conn_id='{{task.rdbmsConnId}}',
+    rdbms_table='{{task.rdbmsTable}}',
+    rdbms_column='{{task.rdbmsColumn}}',
+    rdbms_presql="""
+    <%-task.rdbmsPreSql %>
+    """,
+    dag=dag
+)
+
+{{taskId}}.doc = """
+    <%- task.description %>
+"""
