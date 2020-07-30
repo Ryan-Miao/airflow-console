@@ -13,6 +13,8 @@ Airflow提供了基于python语法的dag任务管理,我们可以定制任务内
 
 ## 如何使用
 
+见博客[Airflow Dag可视化管理编辑工具Airflow Console](https://www.cnblogs.com/woshimrf/p/airflow-console.html)
+
 ### 一些概念
 
 **DAG**:  Airflow原生的dag， 多个任务依赖组成的有向无环图， 一个任务依赖链。
